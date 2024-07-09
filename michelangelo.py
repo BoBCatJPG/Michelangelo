@@ -183,23 +183,5 @@ async def on_member_join(member):
                  on_mobile = True
              await channel.send("Ma frate benvenuto {}!!\n: {}".format(member.name,on_mobile))             
         
-# TODO : Filter out swear words from messages
-
-@bot.command()
-async def tell_me_about_yourself(ctx):
-    text = "My name is WallE!\n I was built by Kakarot2000. At present I have limited features(find out more by typing !help)\n :)"
-    await ctx.send(text)
-
-@bot.event
-async def on_message(message) :
-    # bot.process_commands(msg) is a couroutine that must be called here since we are overriding the on_message event
-    await bot.process_commands(message) 
-    if str(message.content).lower() == "hello":
-        await message.channel.send('Hi!')
-    
-    if str(message.content).lower() in ['swear_word1','swear_word2']:
-        await message.channel.purge(limit=1)
-
-
 if __name__ == "__main__" :
     bot.run(DISCORD_TOKEN)
