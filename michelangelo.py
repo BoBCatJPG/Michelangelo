@@ -81,7 +81,7 @@ async def play(ctx,search :str):
         async with ctx.typing():
             filename = await YTDLSource.from_url(url, loop=bot.loop)
             voice_channel.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename), after=lambda e: delete_file(filename))
-        await ctx.send('**Now playing:** {}'.format(filename))
+        await ctx.send('**Vita mia senti questa:** {}'.format(filename))
     except:
         await ctx.send("Mbare, prima ma fari tràsiri.")
 
