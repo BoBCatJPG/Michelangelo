@@ -2,7 +2,7 @@
 Michelangelo, il bot di discord più zauddo che mai
 ## Installation
 
-1. Create virtual envirnoment preventing libraries conflicts
+1. Create virtual environment preventing libraries conflicts
     -   python -m venv <_env name_>
 
 2. Switch environment
