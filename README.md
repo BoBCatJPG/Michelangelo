@@ -1,5 +1,6 @@
 # Michelangelo
-Michelangelo, il bot di discord più zauddo che mai
+Michelangelo, il bot di discord più zauddo che mai.
+
 ## Installation
 
 1. Create virtual environment preventing libraries conflicts
@@ -11,6 +12,8 @@ Michelangelo, il bot di discord più zauddo che mai
 3. Install Requirements
     - python -m pip install -r  requirements.txt
 
-4. (optional) create a directory to store ffmpeg downloaded files
+4. Create .env file to store discord bot token and other sensitive data.
+
+4. (optional) create a directory to store ffmpeg downloaded files.
 
 That's all.
