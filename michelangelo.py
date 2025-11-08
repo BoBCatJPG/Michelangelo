@@ -1,187 +1,136 @@
-
-import discord
-from discord.ext import commands
-import yt_dlp as youtube_dl
-import asyncio
 import os
-from youtube_search import YoutubeSearch
+import asyncio
+import re
+from difflib import SequenceMatcher
+import discord
+import yt_dlp
+from dotenv import load_dotenv
 
-# Get the API token from the .env file.
-DISCORD_TOKEN = os.getenv('discord_token')
+class Michelangelo:
+    def __init__(self):
+        load_dotenv()
+        self.token = os.getenv("discord_token")
+        if not self.token:
+            raise RuntimeError("Variabile d'ambiente 'discord_token' mancante.")
 
-intents = discord.Intents().all()
-client = discord.Client(intents=intents)
-bot = commands.Bot(command_prefix='!',intents=intents)
+        intents = discord.Intents.default()
+        intents.message_content = True
+        self.client = discord.Client(intents=intents)
 
+        self.voice_clients: dict[int, discord.VoiceClient] = {}
+        # yt_dlp options: best audio only
+        yt_dl_options = {"format": "bestaudio/best"}
+        self.ytdl = yt_dlp.YoutubeDL(yt_dl_options)
+        # FFmpeg options: drop video, attempt reconnects for livestreams
+        self.ffmpeg_before_options = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"
+        self.ffmpeg_options = "-vn"
 
-youtube_dl.utils.bug_reports_message = lambda: ''
-
-ytdl_format_options = {
-    
-    'format': 'bestaudio/best',
-    'restrictfilenames': True,
-    'noplaylist': True,
-    'nocheckcertificate': True,
-    'ignoreerrors': False,
-    'logtostderr': False,
-    'quiet': True,
-    'no_warnings': True,
-    'default_search': 'auto',
-    'source_address': '0.0.0.0',
-    'outtmpl': os.path.join('audio_files', '%(title)s.%(ext)s'),
-}
-
-ffmpeg_options = {
-    'options': '-vn'
-}
-
-ytdl = youtube_dl.YoutubeDL(ytdl_format_options)
-
-
-#delete files in the project directory
-def delete_file(filename):
-    if os.path.exists(filename):
-        os.remove(filename)
-
-class YTDLSource(discord.PCMVolumeTransformer):
-    def __init__(self, source, *, data, volume=0.5):
-        super().__init__(source, volume)
-        self.data = data
-        self.title = data.get('title')
-        self.url = ""
-
-    @classmethod
-    async def from_url(cls, url, *, loop=None, stream=False):
-        loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
-        if 'entries' in data:
-            # take first item from a playlist
-            data = data['entries'][0]
-        filename = data['title'] if stream else ytdl.prepare_filename(data)
-        return filename
-
-#converting using YoutubeSearch for easy to use in discord chat
-def search_youtube(query):
-    results = YoutubeSearch(query, max_results=1).to_dict()
-    if results:
-        return f"https://www.youtube.com{results[0]['url_suffix']}"
-    return None
-
-@bot.command(name='play', help='To play song')
-async def play(ctx,search :str):
-    try :
-        url = search_youtube(search)
-        print(url)
-        if url is None:
-            await ctx.send("Nenti truvai")
+        @self.client.event
+        async def on_ready():
+            print(f'{self.client.user} è connesso!')
         
-        server = ctx.message.guild
-        voice_channel = server.voice_client
+        @self.client.event
+        async def on_message(message):
 
-        async with ctx.typing():
-            filename = await YTDLSource.from_url(url, loop=bot.loop)
-            voice_channel.play(discord.FFmpegPCMAudio(executable="ffmpeg.exe", source=filename), after=lambda e: delete_file(filename))
-        await ctx.send('**Vita mia senti questa:** {}'.format(filename))
-    except:
-        await ctx.send("Mbare, prima ma fari tràsiri.")
+            # play (URL o ricerca per somiglianza)
+            if message.content.startswith("!play"):
+                try:
+                    arg_str = message.content[len("!play"):].strip()
+                    if not arg_str:
+                        await message.channel.send("Uso: !play <url YouTube | parole chiave>")
+                        return
+
+                    # Ensure author is in a voice channel
+                    if not message.author.voice or not message.author.voice.channel:
+                        await message.channel.send("Devi essere in un canale vocale.")
+                        return
+
+                    guild_id = message.guild.id
+                    voice_client = self.voice_clients.get(guild_id)
+                    if not (voice_client and voice_client.is_connected()):
+                        voice_client = await message.author.voice.channel.connect()
+                        self.voice_clients[guild_id] = voice_client
+
+                    loop = asyncio.get_event_loop()
+                    is_url = re.match(r'https?://', arg_str) is not None
+                    chosen_title = arg_str
+
+                    if is_url:
+                        data = await loop.run_in_executor(None, lambda: self.ytdl.extract_info(arg_str, download=False))
+                        song_url = data.get('url')
+                        chosen_title = data.get('title', arg_str)
+                    else:
+                        search_query = arg_str
+                        search_term = f"ytsearch5:{search_query}"
+                        search_data = await loop.run_in_executor(None, lambda: self.ytdl.extract_info(search_term, download=False))
+                        entries = (search_data or {}).get('entries', [])
+                        if not entries:
+                            await message.channel.send("Nessun risultato trovato.")
+                            return
+                        def sim(title: str) -> float:
+                            return SequenceMatcher(None, search_query.lower(), title.lower()).ratio()
+                        best = max(entries, key=lambda e: sim(e.get('title', '')))
+                        song_url = best.get('url')
+                        chosen_title = best.get('title', 'Titolo sconosciuto')
+
+                    if not song_url:
+                        await message.channel.send("Non sono riuscito a ottenere l'audio.")
+                        return
+
+                    audio_source = discord.FFmpegPCMAudio(
+                        song_url,
+                        before_options=self.ffmpeg_before_options,
+                        options=self.ffmpeg_options
+                    )
+                    if voice_client.is_playing():
+                        voice_client.stop()
+                    voice_client.play(audio_source)
+                    if is_url:
+                        await message.channel.send(f"Questa è nmostru (URL): {chosen_title}")
+                    else:
+                        await message.channel.send(f"Questa è nmostru (ricerca): {chosen_title}")
+                except Exception as e:
+                    print(e)
+                    await message.channel.send(f"no mbare non me la fa partire: {e}")
+            
+            #pause
+            if message.content.startswith("!pause"):
+                vc = self.voice_clients.get(message.guild.id)
+                if vc and vc.is_playing():
+                    vc.pause()
+                    await message.channel.send("Misi in pausa.")
+                else:
+                    await message.channel.send("Nessun audio in riproduzione.")
+
+            #resume
+            if message.content.startswith("!resume"):
+                vc = self.voice_clients.get(message.guild.id)
+                if vc and vc.is_paused():
+                    vc.resume()
+                    await message.channel.send("Unnerumu...ah si.")
+                else:
+                    await message.channel.send("Ma frate non c'è nulla in pausa.")
+            #stop
+            if message.content.startswith("!stop"):
+                vc = self.voice_clients.get(message.guild.id)
+                if vc and (vc.is_playing() or vc.is_paused()):
+                    vc.stop()
+                    await message.channel.send("Nooo minchia sul più bello.")
+                else:
+                    await message.channel.send("Guarda che non c'è nulla da fermare.")
+
+            #leave
+            if message.content.startswith("!leave"):
+                vc = self.voice_clients.get(message.guild.id)
+                if vc and vc.is_connected():
+                    await vc.disconnect()
+                    await message.channel.send("Ti salutai.")
+                    del self.voice_clients[message.guild.id]
+                else:
+                    await message.channel.send("Viri ca già mi ni ii.")
 
 
-@bot.command(name='join', help='Tells the bot to join the voice channel')
-async def join(ctx):
-    if not ctx.message.author.voice:
-        await ctx.send("{}, prima trasi tu e poi iu, chi spacchiu fai".format(ctx.message.author.name))
-        return
-    else:
-        channel = ctx.message.author.voice.channel
-    await channel.connect()
+    def run(self):
+        self.client.run(self.token)
 
 
-@bot.command(name='pause', help='This command pauses the song')
-async def pause(ctx):
-    voice_client = ctx.message.guild.voice_client
-    if voice_client.is_playing():
-        voice_client.pause()
-    else:
-        await ctx.send("vita mia sono già in coffe break.")
-    
-@bot.command(name='resume', help='Resumes the song')
-async def resume(ctx):
-    voice_client = ctx.message.guild.voice_client
-    if voice_client.is_paused():
-        voice_client.resume()
-    else:
-        await ctx.send("Ma si scemu, nun u viri ca nun staiu sunannu.")
-    
-
-
-@bot.command(name='leave', help='To make the bot leave the voice channel')
-async def leave(ctx):
-    voice_client = ctx.message.guild.voice_client
-    if voice_client.is_connected():
-        voice_client.disconnect()
-    else:
-        await ctx.send("Ma frate, prima ma fare trasìri.")
-
-@bot.command(name='stop', help='Stops the song')
-
-async def stop(ctx):
-    voice_client = ctx.message.guild.voice_client
-    if voice_client.is_playing():
-        voice_client.stop()
-    else:
-        await ctx.send("Ma si scemu, nun u viri ca nun staiu sunannu, cose re pazzi.")
-
-
-@bot.event
-async def on_ready():
-    print('Ca semu!')
-    for guild in bot.guilds:
-        for channel in guild.text_channels :
-            if str(channel) == "general" :
-                await channel.send('Prontu sugnu..')
-                await channel.send(file=discord.File('giphy.png'))
-        print('Active in {}\n Member Count : {}'.format(guild.name,guild.member_count))
-
-@bot.command(help = "Prints details of Author")
-async def whats_my_name(ctx) :
-    await ctx.send('Ou mbare {}'.format(ctx.author.name))
-
-@bot.command(help = "Prints details of Server")
-async def where_am_i(ctx):
-    owner=str(ctx.guild.owner)
-    region = str(ctx.guild.region)
-    guild_id = str(ctx.guild.id)
-    memberCount = str(ctx.guild.member_count)
-    icon = str(ctx.guild.icon_url)
-    desc=ctx.guild.description
-    
-    embed = discord.Embed(
-        title=ctx.guild.name + " Server Information",
-        description=desc,
-        color=discord.Color.blue()
-    )
-    embed.set_thumbnail(url=icon)
-    embed.add_field(name="Owner", value=owner, inline=True)
-    embed.add_field(name="Server ID", value=guild_id, inline=True)
-    embed.add_field(name="Region", value=region, inline=True)
-    embed.add_field(name="Member Count", value=memberCount, inline=True)
-
-    await ctx.send(embed=embed)
-
-    members=[]
-    async for member in ctx.guild.fetch_members(limit=150) :
-        await ctx.send('Name : {}\t Status : {}\n Joined at {}'.format(member.display_name,str(member.status),str(member.joined_at)))
-
-    
-
-@bot.event
-async def on_member_join(member):
-     for channel in member.guild.text_channels :
-         if str(channel) == "general" :
-             on_mobile=False
-             if member.is_on_mobile() == True :
-                 on_mobile = True
-             await channel.send("Ma frate benvenuto {}!!\n: {}".format(member.name,on_mobile))             
-        
-if __name__ == "__main__" :
-    bot.run(DISCORD_TOKEN)

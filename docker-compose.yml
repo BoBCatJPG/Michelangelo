@@ -1,0 +1,10 @@
+services:
+  michelangelo:
+    build: .
+    container_name: michelangelo_bot
+    restart: unless-stopped
+    environment:
+      - discord_token=${discord_token}
+    # Uncomment to mount local code for live editing
+    # volumes:
+    #   - ./:/app
