@@ -28,12 +28,12 @@ sudo apt update && sudo apt install -y ffmpeg
 
 In qualsiasi canale testuale:
 
-- `?play <url>`: riproduce l'audio del video YouTube
-- `?play <parole chiave>`: effettua una ricerca YouTube (fuzzy) e riproduce il miglior risultato
-- `?pause`: mette in pausa
-- `?resume`: riprende l'audio
-- `?stop`: ferma la riproduzione
-- `?leave`: disconnette il bot dal canale vocale
+- `!play <url>`: riproduce l'audio del video YouTube
+- `!play <parole chiave>`: effettua una ricerca YouTube (fuzzy) e riproduce il miglior risultato
+- `!pause`: mette in pausa
+- `!resume`: riprende l'audio
+- `!stop`: ferma la riproduzione
+- `!leave`: disconnette il bot dal canale vocale
 
 ## Run
 

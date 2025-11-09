@@ -6,5 +6,5 @@ services:
     environment:
       - discord_token=${discord_token}
     # Uncomment to mount local code for live editing
-    # volumes:
-    #   - ./:/app
+    volumes:
+      - ./:/app

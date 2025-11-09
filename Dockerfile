@@ -17,15 +17,14 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy source code
-# Copy source code
-COPY michelangelo.py main.py README.md entrypoint.sh ./
+COPY michelangelo.py main.py README.md entrypoint.sh .env ./
 RUN chmod +x entrypoint.sh
 # Copy .env only if present (optional) - better to inject via environment instead
 # You can pass discord_token via docker run -e discord_token=... or compose file.
-
-# Non-root user for security (optional)
-RUN useradd -m botuser && chown -R botuser:botuser /app
-USER botuser
+ 
+# # Non-root user for security (optional)
+# RUN useradd -m botuser && chown -R botuser:botuser /app
+# USER botuser
 
 # Entrypoint
 ENTRYPOINT ["./entrypoint.sh"]
